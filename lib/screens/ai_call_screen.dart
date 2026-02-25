@@ -90,6 +90,55 @@ class _AICallScreenState extends State<AICallScreen> {
             ),
           ),
 
+          // Status Text at Top
+          Positioned(
+            top: 60,
+            left: 0,
+            right: 0,
+            child: Consumer<AIAssistantProvider>(
+              builder: (context, aiProvider, child) {
+                String statusText = '';
+                Color statusColor = Colors.white;
+                
+                switch (aiProvider.currentState) {
+                  case AIState.listening:
+                    statusText = '🎤 Listening...';
+                    statusColor = const Color(0xFF8B5CF6);
+                    break;
+                  case AIState.thinking:
+                    statusText = '🤔 Thinking...';
+                    statusColor = const Color(0xFF6366F1);
+                    break;
+                  case AIState.speaking:
+                    statusText = '🔊 Speaking...';
+                    statusColor = const Color(0xFFEC4899);
+                    break;
+                  default:
+                    statusText = 'Tap mic to talk';
+                    statusColor = const Color(0xFF94A3B8);
+                }
+                
+                return Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Text(
+                      statusText,
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: statusColor,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
           // Bottom Controls - Always Visible
           Positioned(
             bottom: 0,
@@ -150,12 +199,63 @@ class _AICallScreenState extends State<AICallScreen> {
 
                       const SizedBox(width: 40),
 
-                      // End Call Button (Center, Bigger)
+                      // Microphone Button (Center)
+                      Consumer<AIAssistantProvider>(
+                        builder: (context, aiProvider, child) {
+                          final isActive = aiProvider.isMicActive;
+                          final isListening = aiProvider.currentState == AIState.listening;
+                          
+                          return GestureDetector(
+                            onTap: () {
+                              if (!isActive) {
+                                aiProvider.handleMicPress();
+                              }
+                            },
+                            child: Container(
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: isListening
+                                    ? const LinearGradient(
+                                        colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                                      )
+                                    : null,
+                                color: isListening ? null : const Color(0xFF1E293B),
+                                border: Border.all(
+                                  color: isActive
+                                      ? const Color(0xFF8B5CF6)
+                                      : const Color(0xFF8B5CF6).withOpacity(0.5),
+                                  width: 3,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: isActive
+                                        ? const Color(0xFF8B5CF6).withOpacity(0.6)
+                                        : const Color(0xFF8B5CF6).withOpacity(0.3),
+                                    blurRadius: isActive ? 25 : 15,
+                                    spreadRadius: isActive ? 5 : 2,
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                isListening ? Icons.mic : Icons.mic_none,
+                                color: Colors.white,
+                                size: 36,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+
+                      const SizedBox(width: 40),
+
+                      // End Call Button
                       GestureDetector(
                         onTap: () => _handleEndCall(context),
                         child: Container(
-                          width: 70,
-                          height: 70,
+                          width: 60,
+                          height: 60,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: const Color(0xFFEF4444),
@@ -170,15 +270,10 @@ class _AICallScreenState extends State<AICallScreen> {
                           child: const Icon(
                             Icons.call_end,
                             color: Colors.white,
-                            size: 32,
+                            size: 28,
                           ),
                         ),
                       ),
-
-                      const SizedBox(width: 40),
-
-                      // Spacer to balance the layout (same width as shop button)
-                      const SizedBox(width: 60),
                     ],
                   ),
                 ),

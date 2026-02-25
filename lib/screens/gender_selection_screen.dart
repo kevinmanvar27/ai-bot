@@ -85,13 +85,13 @@ class _GenderSelectionScreenState extends State<GenderSelectionScreen> {
                     gradient: const LinearGradient(
                       colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF8B5CF6).withOpacity(0.5),
-                        blurRadius: 30,
-                        spreadRadius: 10,
-                      ),
-                    ],
+                    // boxShadow: [
+                    //   BoxShadow(
+                    //     color: const Color(0xFF8B5CF6).withOpacity(0.5),
+                    //     blurRadius: 30,
+                    //     spreadRadius: 10,
+                    //   ),
+                    // ],
                   ),
                   child: const Icon(
                     Icons.person_outline,
@@ -100,7 +100,7 @@ class _GenderSelectionScreenState extends State<GenderSelectionScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 40),
+                const SizedBox(height: 20),
 
                 // Title
                 Text(
@@ -169,23 +169,23 @@ class _GenderSelectionScreenState extends State<GenderSelectionScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 32),
+                // const SizedBox(height: ),
 
                 // Info text
                 if (_selectedGender != null)
                   Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF8B5CF6).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFF8B5CF6).withOpacity(0.3),
-                      ),
-                    ),
+                    // decoration: BoxDecoration(
+                    //   color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                    //   borderRadius: BorderRadius.circular(12),
+                    //   border: Border.all(
+                    //     color: const Color(0xFF8B5CF6).withOpacity(0.3),
+                    //   ),
+                    // ),
                     child: Row(
                       children: [
                         const Icon(
-                          Icons.info_outline,
+                          Icons.info_rounded,
                           color: Color(0xFF8B5CF6),
                           size: 20,
                         ),
@@ -225,16 +225,16 @@ class _GenderSelectionScreenState extends State<GenderSelectionScreen> {
                           ? const Color(0xFF334155)
                           : null,
                       borderRadius: BorderRadius.circular(30),
-                      boxShadow: _selectedGender != null
+                      /*boxShadow: _selectedGender != null
                           ? [
                               BoxShadow(
                                 color:
                                     const Color(0xFF8B5CF6).withOpacity(0.5),
-                                blurRadius: 20,
-                                spreadRadius: 2,
+                                blurRadius: 100,
+                                // spreadRadius: ,
                               ),
                             ]
-                          : null,
+                          : null,*/
                     ),
                     child: Center(
                       child: _isLoading
@@ -297,15 +297,15 @@ class _GenderCard extends StatelessWidget {
                 : Colors.white.withOpacity(0.1),
             width: isSelected ? 2 : 1,
           ),
-          boxShadow: isSelected
+         /* boxShadow: isSelected
               ? [
                   BoxShadow(
                     color: const Color(0xFF8B5CF6).withOpacity(0.5),
                     blurRadius: 20,
-                    spreadRadius: 2,
+                    // spreadRadius: 2,
                   ),
                 ]
-              : null,
+              : null,*/
         ),
         child: Column(
           children: [

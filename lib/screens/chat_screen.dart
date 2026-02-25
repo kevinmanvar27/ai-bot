@@ -15,6 +15,17 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  int _previousMessageCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen to message changes and auto-scroll
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final aiProvider = Provider.of<AIAssistantProvider>(context, listen: false);
+      _previousMessageCount = aiProvider.messages.length;
+    });
+  }
 
   @override
   void dispose() {
@@ -39,16 +50,23 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _messageController.clear();
 
-    // Scroll to bottom
+    // Scroll to bottom after user message
+    _scrollToBottom();
+    
+    // Scroll again after typing indicator appears
     Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      _scrollToBottom();
     });
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   @override
@@ -116,11 +134,52 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: Consumer<AIAssistantProvider>(
               builder: (context, aiProvider, child) {
+                // Auto-scroll when new message arrives
+                if (aiProvider.messages.length != _previousMessageCount) {
+                  _previousMessageCount = aiProvider.messages.length;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _scrollToBottom();
+                  });
+                }
+                
+                // Auto-scroll when typing state changes
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _scrollToBottom();
+                });
+                
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  itemCount: aiProvider.messages.length,
+                  itemCount: aiProvider.messages.length + (aiProvider.isTyping ? 1 : 0),
                   itemBuilder: (context, index) {
+                    // Show typing indicator as last item
+                    if (aiProvider.isTyping && index == aiProvider.messages.length) {
+                      return Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E293B),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildTypingDot(0),
+                              const SizedBox(width: 4),
+                              _buildTypingDot(1),
+                              const SizedBox(width: 4),
+                              _buildTypingDot(2),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                    
                     final message = aiProvider.messages[index];
                     final isUser = message.isUser;
 
@@ -239,5 +298,33 @@ class _ChatScreenState extends State<ChatScreen> {
       case AIEmotion.thinking:
         return 'Thinking';
     }
+  }
+
+  // Typing indicator dot with animation
+  Widget _buildTypingDot(int index) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 600),
+      builder: (context, value, child) {
+        final delay = index * 0.2;
+        final animValue = (value + delay) % 1.0;
+        final opacity = (animValue < 0.5) ? animValue * 2 : (1 - animValue) * 2;
+        
+        return Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFF8B5CF6).withOpacity(0.3 + (opacity * 0.7)),
+          ),
+        );
+      },
+      onEnd: () {
+        // Restart animation
+        if (mounted) {
+          setState(() {});
+        }
+      },
+    );
   }
 }

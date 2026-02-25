@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/message_model.dart';
 import '../models/shop_item_model.dart';
 import '../utils/dummy_ai_service.dart';
 import '../utils/dummy_shop_data.dart';
+import '../services/groq_ai_service.dart'; // Groq AI (FREE & FAST)
+import '../services/voice_service.dart';
 
 /// AI Assistant state management provider
 class AIAssistantProvider with ChangeNotifier {
@@ -17,13 +20,20 @@ class AIAssistantProvider with ChangeNotifier {
   // Control states
   bool _isMicActive = false;
   bool _isCameraActive = false;
+  bool _isTyping = false; // Typing indicator for AI response
   
   // Shop integration
   int _messageCount = 0;
   
   // Gender configuration
   String _aiGender = 'female'; // Default
-  String _aiName = 'Radhika'; // Default female name
+  String _aiName = ''; // Will be loaded from SharedPreferences
+  
+  // Voice service instance
+  final VoiceService _voiceService = VoiceService();
+  
+  // Platform channel for native speech recognition
+  static const platform = MethodChannel('com.rektech.ai_assistant/speech');
 
   // Getters
   AIState get currentState => _currentState;
@@ -31,6 +41,7 @@ class AIAssistantProvider with ChangeNotifier {
   List<MessageModel> get messages => List.unmodifiable(_messages);
   bool get isMicActive => _isMicActive;
   bool get isCameraActive => _isCameraActive;
+  bool get isTyping => _isTyping; // Getter for typing state
   String get aiGender => _aiGender;
   String get aiName => _aiName;
 
@@ -60,16 +71,30 @@ class AIAssistantProvider with ChangeNotifier {
 
   /// Initialize with welcome message
   Future<void> initialize() async {
-    // Load AI gender configuration from SharedPreferences
+    // Initialize Groq AI Service (FREE & FAST)
+    await GroqAIService.initialize();
+    
+    // Initialize Voice Service (TTS only, recording will be initialized on first use)
+    await _voiceService.initializeTTS();
+    
+    // Load AI gender configuration from SharedPreferences FIRST
     final prefs = await SharedPreferences.getInstance();
     _aiGender = prefs.getString('ai_gender') ?? 'female';
     
     // Load custom AI name from SharedPreferences, or use default based on gender
-    _aiName = prefs.getString('ai_custom_name') ?? (_aiGender == 'female' ? 'Radhika' : 'Arjun');
+    final savedName = prefs.getString('ai_custom_name');
+    if (savedName != null && savedName.isNotEmpty) {
+      _aiName = savedName;
+    } else {
+      // Only set default if no saved name exists
+      _aiName = _aiGender == 'female' ? 'Radhika' : 'Arjun';
+    }
     
     // Debug: Print loaded name
     print('🔍 DEBUG: Loaded AI name from SharedPreferences: $_aiName');
     print('🔍 DEBUG: AI gender: $_aiGender');
+    print('🤖 Groq AI Status: ${GroqAIService.isInitialized ? "Connected ✅" : "Failed ❌"}');
+    print('🎤 Voice Service Status: Ready ✅');
     
     _messages.add(MessageModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -81,52 +106,105 @@ class AIAssistantProvider with ChangeNotifier {
   }
 
   /// Handle microphone button press
-  /// Simulates: Listening → Thinking → Speaking → Idle cycle
+  /// Uses Android native speech recognition
   Future<void> handleMicPress() async {
     if (_isMicActive) return;
 
     _isMicActive = true;
     notifyListeners();
 
-    // Step 1: Listening
-    _currentState = AIState.listening;
-    notifyListeners();
+    try {
+      // Step 1: Listening (show listening state)
+      _currentState = AIState.listening;
+      _currentEmotion = AIEmotion.neutral;
+      notifyListeners();
 
-    // TODO: Integrate real speech-to-text API here
-    final voiceInput = await DummyAIService.simulateVoiceRecognition();
-    
-    // Add user message
-    _messages.add(MessageModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      text: voiceInput,
-      isUser: true,
-      timestamp: DateTime.now(),
-    ));
+      print('🎤 Starting speech recognition...');
+      
+      // Request microphone permission
+      final hasPermission = await _voiceService.requestMicrophonePermission();
+      if (!hasPermission) {
+        await _voiceService.speak('Please grant microphone permission to use voice features.');
+        _currentState = AIState.idle;
+        _isMicActive = false;
+        notifyListeners();
+        return;
+      }
 
-    // Step 2: Thinking
-    _currentState = AIState.thinking;
-    _currentEmotion = AIEmotion.thinking;
-    notifyListeners();
+      // Use Android's native speech recognition
+      String recognizedText = '';
+      try {
+        final result = await platform.invokeMethod('startSpeechRecognition');
+        recognizedText = result?.toString() ?? '';
+        print('✅ Recognized text: "$recognizedText"');
+      } on PlatformException catch (e) {
+        print('❌ Speech recognition platform error: ${e.message}');
+        await _voiceService.speak('Sorry, there was an error with the microphone.');
+        _currentState = AIState.idle;
+        _isMicActive = false;
+        notifyListeners();
+        return;
+      } catch (e) {
+        print('❌ Speech recognition error: $e');
+        recognizedText = '';
+      }
+      
+      if (recognizedText.trim().isEmpty) {
+        print('⚠️ No speech detected');
+        await _voiceService.speak('Sorry, I didn\'t hear anything. Please try again.');
+        _currentState = AIState.idle;
+        _isMicActive = false;
+        notifyListeners();
+        return;
+      }
 
-    await Future.delayed(const Duration(seconds: 2));
+      print('✅ User said: $recognizedText');
 
-    // TODO: Integrate real AI API here
-    final aiResponse = await DummyAIService.getAIResponse(voiceInput);
-    _messages.add(aiResponse);
+      // Step 2: Processing (Thinking)
+      _currentState = AIState.thinking;
+      _currentEmotion = AIEmotion.thinking;
+      notifyListeners();
 
-    // Step 3: Speaking
-    _currentState = AIState.speaking;
-    _currentEmotion = AIEmotion.happy;
-    notifyListeners();
+      print('🤖 Sending to AI...');
+      
+      // Get AI response using Groq AI
+      String aiResponseText;
+      if (GroqAIService.isInitialized) {
+        aiResponseText = await GroqAIService.sendMessage(recognizedText);
+      } else {
+        aiResponseText = 'Sorry, Groq AI is currently unavailable.';
+      }
 
-    // TODO: Integrate text-to-speech API here
-    await Future.delayed(const Duration(seconds: 3));
+      print('✅ AI response: $aiResponseText');
 
-    // Step 4: Return to Idle
-    _currentState = AIState.idle;
-    _currentEmotion = AIEmotion.neutral;
-    _isMicActive = false;
-    notifyListeners();
+      // Step 3: Speaking
+      _currentState = AIState.speaking;
+      _currentEmotion = AIEmotion.happy;
+      notifyListeners();
+
+      print('🔊 Speaking AI response...');
+      
+      // Speak the AI response
+      await _voiceService.speak(aiResponseText);
+
+      // Wait for speech to complete (estimate based on text length)
+      final estimatedDuration = Duration(
+        milliseconds: (aiResponseText.length * 70), // ~70ms per character for faster speech
+      );
+      await Future.delayed(estimatedDuration);
+
+      print('✅ Voice call completed');
+
+    } catch (e) {
+      print('❌ Error in voice call: $e');
+      await _voiceService.speak('Sorry, something went wrong. Please try again.');
+    } finally {
+      // Step 4: Return to Idle
+      _currentState = AIState.idle;
+      _currentEmotion = AIEmotion.neutral;
+      _isMicActive = false;
+      notifyListeners();
+    }
   }
 
   /// Handle text message send
@@ -143,13 +221,30 @@ class AIAssistantProvider with ChangeNotifier {
     _messageCount++;
     notifyListeners();
 
-    // Simulate AI thinking
+    // Show typing indicator
+    _isTyping = true;
     _currentState = AIState.thinking;
     _currentEmotion = AIEmotion.thinking;
     notifyListeners();
 
-    // TODO: Replace with real API call
-    final aiResponse = await DummyAIService.getAIResponse(text);
+    // Get AI response using Groq AI
+    String aiResponseText;
+    if (GroqAIService.isInitialized) {
+      aiResponseText = await GroqAIService.sendMessage(text);
+    } else {
+      aiResponseText = 'Sorry, Groq AI is currently unavailable.';
+    }
+    
+    // Create AI message model
+    final aiResponse = MessageModel(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      text: aiResponseText,
+      isUser: false,
+      timestamp: DateTime.now(),
+    );
+    
+    // Hide typing indicator
+    _isTyping = false;
     _messages.add(aiResponse);
 
     // Check if AI should make a gift request
@@ -227,6 +322,7 @@ class AIAssistantProvider with ChangeNotifier {
   /// Clear chat history
   void clearChat() {
     _messages.clear();
+    GroqAIService.clearHistory(); // Reset AI conversation context
     initialize();
   }
 }

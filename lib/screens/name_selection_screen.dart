@@ -154,13 +154,13 @@ class _NameSelectionScreenState extends State<NameSelectionScreen> {
                     gradient: const LinearGradient(
                       colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF8B5CF6).withOpacity(0.5),
-                        blurRadius: 30,
-                        spreadRadius: 10,
-                      ),
-                    ],
+                    // boxShadow: [
+                    //   BoxShadow(
+                    //     color: const Color(0xFF8B5CF6).withOpacity(0.5),
+                    //     blurRadius: 30,
+                    //     spreadRadius: 10,
+                    //   ),
+                    // ],
                   ),
                   child: Icon(
                     widget.aiGender == 'female' ? Icons.female : Icons.male,
@@ -206,7 +206,7 @@ class _NameSelectionScreenState extends State<NameSelectionScreen> {
                           : Colors.white.withOpacity(0.1),
                       width: _nameFocusNode.hasFocus ? 2 : 1,
                     ),
-                    boxShadow: _nameFocusNode.hasFocus
+                    /*boxShadow: _nameFocusNode.hasFocus
                         ? [
                             BoxShadow(
                               color: const Color(0xFF8B5CF6).withOpacity(0.3),
@@ -214,7 +214,7 @@ class _NameSelectionScreenState extends State<NameSelectionScreen> {
                               spreadRadius: 2,
                             ),
                           ]
-                        : null,
+                        : null,*/
                   ),
                   child: TextField(
                     controller: _nameController,
@@ -256,7 +256,7 @@ class _NameSelectionScreenState extends State<NameSelectionScreen> {
                     child: Row(
                       children: [
                         const Icon(
-                          Icons.error_outline,
+                          Icons.error_rounded,
                           color: Color(0xFFEF4444),
                           size: 16,
                         ),
@@ -292,11 +292,11 @@ class _NameSelectionScreenState extends State<NameSelectionScreen> {
                       Row(
                         children: [
                           const Icon(
-                            Icons.info_outline,
+                            Icons.info_rounded,
                             color: Color(0xFF8B5CF6),
                             size: 20,
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 8),
                           Text(
                             'Name Guidelines',
                             style: GoogleFonts.poppins(
@@ -312,7 +312,7 @@ class _NameSelectionScreenState extends State<NameSelectionScreen> {
                       const SizedBox(height: 6),
                       _GuidelineItem(text: 'Letters and spaces only'),
                       const SizedBox(height: 6),
-                      _GuidelineItem(text: 'Example: Radhika, Alex, Maya'),
+                      _GuidelineItem(text: 'Example: Vuby, Alex, Maya'),
                     ],
                   ),
                 ),
@@ -372,7 +372,7 @@ class _NameSelectionScreenState extends State<NameSelectionScreen> {
                           ? null
                           : const Color(0xFF334155),
                       borderRadius: BorderRadius.circular(30),
-                      boxShadow: canContinue
+                      /*boxShadow: canContinue
                           ? [
                               BoxShadow(
                                 color: const Color(0xFF8B5CF6).withOpacity(0.5),
@@ -380,7 +380,7 @@ class _NameSelectionScreenState extends State<NameSelectionScreen> {
                                 spreadRadius: 2,
                               ),
                             ]
-                          : null,
+                          : null,*/
                     ),
                     child: Center(
                       child: _isLoading
