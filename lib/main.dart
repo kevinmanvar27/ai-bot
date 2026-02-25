@@ -132,11 +132,20 @@ class _InitialScreenState extends State<InitialScreen> with SingleTickerProvider
     
     final prefs = await SharedPreferences.getInstance();
     final hasCompletedOnboarding = prefs.getBool('has_completed_onboarding') ?? false;
+    
+    // Debug: Print all saved preferences
+    print('🔍 DEBUG: Checking onboarding status...');
+    print('🔍 has_completed_onboarding: $hasCompletedOnboarding');
+    print('🔍 ai_gender: ${prefs.getString('ai_gender')}');
+    print('🔍 user_gender: ${prefs.getString('user_gender')}');
+    print('🔍 ai_custom_name: ${prefs.getString('ai_custom_name')}');
 
     if (mounted) {
       if (hasCompletedOnboarding) {
+        print('✅ Onboarding complete - Going to home');
         Navigator.of(context).pushReplacementNamed('/home');
       } else {
+        print('⚠️ Onboarding not complete - Going to gender selection');
         Navigator.of(context).pushReplacementNamed('/gender-selection');
       }
     }

@@ -14,6 +14,15 @@ class AICallScreen extends StatefulWidget {
 }
 
 class _AICallScreenState extends State<AICallScreen> {
+  
+  @override
+  void dispose() {
+    // Stop continuous listening when screen is disposed
+    final aiProvider = Provider.of<AIAssistantProvider>(context, listen: false);
+    aiProvider.stopContinuousListening();
+    super.dispose();
+  }
+  
   Future<bool> _onWillPop() async {
     // Show dialog on back button press
     final shouldPop = await showDialog<bool>(
@@ -49,7 +58,12 @@ class _AICallScreenState extends State<AICallScreen> {
             ),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true), // Allow pop
+            onPressed: () {
+              // Stop continuous listening before ending
+              final aiProvider = Provider.of<AIAssistantProvider>(context, listen: false);
+              aiProvider.stopContinuousListening();
+              Navigator.pop(context, true); // Allow pop
+            },
             child: Text(
               'End Call',
               style: GoogleFonts.inter(
@@ -66,6 +80,10 @@ class _AICallScreenState extends State<AICallScreen> {
   }
 
   void _handleEndCall(BuildContext context) {
+    // Stop continuous listening before ending call
+    final aiProvider = Provider.of<AIAssistantProvider>(context, listen: false);
+    aiProvider.stopContinuousListening();
+    
     // Direct call cut - no dialog
     Navigator.pop(context);
   }
@@ -102,7 +120,7 @@ class _AICallScreenState extends State<AICallScreen> {
                 
                 switch (aiProvider.currentState) {
                   case AIState.listening:
-                    statusText = '🎤 Listening...';
+                    statusText = '🎤 Listening... (Speak now)';
                     statusColor = const Color(0xFF8B5CF6);
                     break;
                   case AIState.thinking:
@@ -110,11 +128,11 @@ class _AICallScreenState extends State<AICallScreen> {
                     statusColor = const Color(0xFF6366F1);
                     break;
                   case AIState.speaking:
-                    statusText = '🔊 Speaking...';
+                    statusText = '🔊 Speaking... (Tap to interrupt)';
                     statusColor = const Color(0xFFEC4899);
                     break;
                   default:
-                    statusText = 'Tap mic to talk';
+                    statusText = 'Tap mic to start conversation';
                     statusColor = const Color(0xFF94A3B8);
                 }
                 
@@ -204,10 +222,15 @@ class _AICallScreenState extends State<AICallScreen> {
                         builder: (context, aiProvider, child) {
                           final isActive = aiProvider.isMicActive;
                           final isListening = aiProvider.currentState == AIState.listening;
+                          final isSpeaking = aiProvider.currentState == AIState.speaking;
                           
                           return GestureDetector(
                             onTap: () {
-                              if (!isActive) {
+                              if (isSpeaking) {
+                                // If AI is speaking, interrupt and listen to user
+                                aiProvider.interruptAndListen();
+                              } else if (!isActive) {
+                                // Normal mic press
                                 aiProvider.handleMicPress();
                               }
                             },
@@ -220,8 +243,12 @@ class _AICallScreenState extends State<AICallScreen> {
                                     ? const LinearGradient(
                                         colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
                                       )
-                                    : null,
-                                color: isListening ? null : const Color(0xFF1E293B),
+                                    : isSpeaking
+                                        ? const LinearGradient(
+                                            colors: [Color(0xFFEC4899), Color(0xFFF97316)],
+                                          )
+                                        : null,
+                                color: (isListening || isSpeaking) ? null : const Color(0xFF1E293B),
                                 border: Border.all(
                                   color: isActive
                                       ? const Color(0xFF8B5CF6)
@@ -239,7 +266,11 @@ class _AICallScreenState extends State<AICallScreen> {
                                 ],
                               ),
                               child: Icon(
-                                isListening ? Icons.mic : Icons.mic_none,
+                                isListening 
+                                    ? Icons.mic 
+                                    : isSpeaking 
+                                        ? Icons.pan_tool_rounded // Hand icon = "Stop & Listen"
+                                        : Icons.mic_none,
                                 color: Colors.white,
                                 size: 36,
                               ),

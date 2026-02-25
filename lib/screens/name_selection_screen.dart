@@ -77,12 +77,16 @@ class _NameSelectionScreenState extends State<NameSelectionScreen> {
       final capitalizedName = name[0].toUpperCase() + name.substring(1).toLowerCase();
       await prefs.setString('ai_custom_name', capitalizedName);
       
-      // Debug: Print saved name
-      print('✅ DEBUG: Saved custom AI name: $capitalizedName');
-      print('✅ DEBUG: Verification - Reading back: ${prefs.getString('ai_custom_name')}');
-      
       // Mark that user has completed onboarding
       await prefs.setBool('has_completed_onboarding', true);
+      
+      // Debug: Print saved values and verify
+      print('✅ DEBUG: Saved custom AI name: $capitalizedName');
+      print('✅ DEBUG: Set onboarding complete: true');
+      print('✅ DEBUG: Verification - ai_custom_name: ${prefs.getString('ai_custom_name')}');
+      print('✅ DEBUG: Verification - has_completed_onboarding: ${prefs.getBool('has_completed_onboarding')}');
+      print('✅ DEBUG: Verification - ai_gender: ${prefs.getString('ai_gender')}');
+      print('✅ DEBUG: Verification - user_gender: ${prefs.getString('user_gender')}');
 
       // Navigate to home screen
       if (mounted) {

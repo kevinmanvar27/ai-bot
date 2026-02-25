@@ -7,6 +7,7 @@ import '../utils/dummy_ai_service.dart';
 import '../utils/dummy_shop_data.dart';
 import '../services/groq_ai_service.dart'; // Groq AI (FREE & FAST)
 import '../services/voice_service.dart';
+import '../services/elevenlabs_service.dart'; // ElevenLabs AI Voice
 
 /// AI Assistant state management provider
 class AIAssistantProvider with ChangeNotifier {
@@ -21,6 +22,8 @@ class AIAssistantProvider with ChangeNotifier {
   bool _isMicActive = false;
   bool _isCameraActive = false;
   bool _isTyping = false; // Typing indicator for AI response
+  bool _continuousListening = false; // Flag for continuous conversation mode
+  bool _isInterrupted = false; // Flag for user interruption during AI speaking
   
   // Shop integration
   int _messageCount = 0;
@@ -74,12 +77,15 @@ class AIAssistantProvider with ChangeNotifier {
     // Initialize Groq AI Service (FREE & FAST)
     await GroqAIService.initialize();
     
-    // Initialize Voice Service (TTS only, recording will be initialized on first use)
-    await _voiceService.initializeTTS();
-    
     // Load AI gender configuration from SharedPreferences FIRST
     final prefs = await SharedPreferences.getInstance();
     _aiGender = prefs.getString('ai_gender') ?? 'female';
+    
+    // Initialize ElevenLabs Voice Service with gender
+    await ElevenLabsService.initialize(gender: _aiGender);
+    
+    // Initialize Voice Service (TTS fallback, recording will be initialized on first use)
+    await _voiceService.initializeTTS();
     
     // Load custom AI name from SharedPreferences, or use default based on gender
     final savedName = prefs.getString('ai_custom_name');
@@ -94,6 +100,7 @@ class AIAssistantProvider with ChangeNotifier {
     print('🔍 DEBUG: Loaded AI name from SharedPreferences: $_aiName');
     print('🔍 DEBUG: AI gender: $_aiGender');
     print('🤖 Groq AI Status: ${GroqAIService.isInitialized ? "Connected ✅" : "Failed ❌"}');
+    print('🎤 ElevenLabs Voice Status: ${ElevenLabsService.isInitialized ? "Connected ✅" : "Fallback to Google TTS"}');
     print('🎤 Voice Service Status: Ready ✅');
     
     _messages.add(MessageModel(
@@ -109,6 +116,9 @@ class AIAssistantProvider with ChangeNotifier {
   /// Uses Android native speech recognition
   Future<void> handleMicPress() async {
     if (_isMicActive) return;
+    
+    // Enable continuous listening mode when mic is pressed
+    _continuousListening = true;
 
     _isMicActive = true;
     notifyListeners();
@@ -180,24 +190,67 @@ class AIAssistantProvider with ChangeNotifier {
       // Step 3: Speaking
       _currentState = AIState.speaking;
       _currentEmotion = AIEmotion.happy;
+      _isInterrupted = false; // Reset interruption flag
       notifyListeners();
 
       print('🔊 Speaking AI response...');
       
-      // Speak the AI response
-      await _voiceService.speak(aiResponseText);
-
-      // Wait for speech to complete (estimate based on text length)
-      final estimatedDuration = Duration(
-        milliseconds: (aiResponseText.length * 70), // ~70ms per character for faster speech
-      );
-      await Future.delayed(estimatedDuration);
-
-      print('✅ Voice call completed');
+      // Try ElevenLabs first (high quality), fallback to Google TTS
+      bool elevenLabsSuccess = false;
+      if (ElevenLabsService.isInitialized) {
+        elevenLabsSuccess = await ElevenLabsService.speak(aiResponseText);
+      }
+      
+      if (!elevenLabsSuccess) {
+        print('🔄 Falling back to Google TTS');
+        await _voiceService.speak(aiResponseText);
+        
+        // Wait for Google TTS to complete (estimate based on text length)
+        final estimatedDuration = Duration(
+          milliseconds: (aiResponseText.length * 80), // ~80ms per character
+        );
+        await Future.delayed(estimatedDuration);
+      }
+      
+      // Check if user interrupted during speaking
+      if (_isInterrupted) {
+        print('⚠️ Speech was interrupted by user');
+        return; // Exit early, don't restart mic (interrupt function will handle it)
+      }
+      
+      // ElevenLabs already waits for completion internally
+      print('✅ Voice playback completed');
+      
+      // Step 4: Return to Idle (but keep mic ready)
+      _currentState = AIState.idle;
+      _currentEmotion = AIEmotion.neutral;
+      _isMicActive = false;
+      notifyListeners();
+      
+      // Check if continuous mode is still ON before pausing
+      if (!_continuousListening) {
+        print('🛑 Continuous mode stopped, not restarting mic');
+        return;
+      }
+      
+      // Step 5: Natural pause before restarting mic (like real conversation)
+      print('⏸️ Natural pause before listening again...');
+      await Future.delayed(const Duration(milliseconds: 1000)); // 1 second pause
+      
+      // Check again after pause (user might have ended call during pause)
+      if (_continuousListening) {
+        print('🔄 Auto-restarting mic for continuous conversation...');
+        handleMicPress();
+      } else {
+        print('🛑 Call ended during pause, not restarting mic');
+      }
 
     } catch (e) {
       print('❌ Error in voice call: $e');
       await _voiceService.speak('Sorry, something went wrong. Please try again.');
+      
+      // Don't restart mic on error
+      _continuousListening = false;
     } finally {
       // Step 4: Return to Idle
       _currentState = AIState.idle;
@@ -205,6 +258,49 @@ class AIAssistantProvider with ChangeNotifier {
       _isMicActive = false;
       notifyListeners();
     }
+  }
+
+  /// Stop continuous listening mode (when call ends)
+  void stopContinuousListening() {
+    _continuousListening = false;
+    _isMicActive = false;
+    _currentState = AIState.idle;
+    _currentEmotion = AIEmotion.neutral;
+    
+    // Stop all voice playback immediately
+    _voiceService.stop();
+    ElevenLabsService.stop();
+    
+    notifyListeners();
+    print('🛑 Continuous listening stopped');
+    print('🔇 All voice playback stopped');
+  }
+  
+  /// Interrupt AI speaking (when user wants to speak during AI response)
+  Future<void> interruptAndListen() async {
+    if (_currentState != AIState.speaking) {
+      // Only interrupt if AI is speaking
+      return;
+    }
+    
+    print('⚠️ User interrupting AI...');
+    _isInterrupted = true;
+    
+    // Stop AI voice immediately
+    _voiceService.stop();
+    ElevenLabsService.stop();
+    
+    // Reset state
+    _currentState = AIState.idle;
+    _isMicActive = false;
+    notifyListeners();
+    
+    // Small delay for audio to stop
+    await Future.delayed(const Duration(milliseconds: 200));
+    
+    // Start listening to user
+    print('🎤 Starting to listen after interruption...');
+    handleMicPress();
   }
 
   /// Handle text message send

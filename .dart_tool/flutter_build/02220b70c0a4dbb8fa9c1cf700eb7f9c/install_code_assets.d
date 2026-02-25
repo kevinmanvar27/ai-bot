@@ -1,0 +1,1 @@
+ C:\\StudioProjects\\ai_assistant\\.dart_tool\\flutter_build\\02220b70c0a4dbb8fa9c1cf700eb7f9c\\native_assets.json: 

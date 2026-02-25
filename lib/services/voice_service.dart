@@ -207,6 +207,11 @@ class VoiceService {
       print('❌ Error stopping speech: $e');
     }
   }
+  
+  /// Alias for stopSpeaking (for consistency)
+  Future<void> stop() async {
+    await stopSpeaking();
+  }
 
   /// Dispose resources
   Future<void> dispose() async {

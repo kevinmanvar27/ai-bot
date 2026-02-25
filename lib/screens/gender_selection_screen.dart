@@ -30,6 +30,12 @@ class _GenderSelectionScreenState extends State<GenderSelectionScreen> {
       // Set AI gender (opposite of user's gender)
       final aiGender = _selectedGender == 'male' ? 'female' : 'male';
       await prefs.setString('ai_gender', aiGender);
+      
+      // Debug: Verify saved values
+      print('✅ DEBUG: Saved user_gender: $_selectedGender');
+      print('✅ DEBUG: Saved ai_gender: $aiGender');
+      print('✅ DEBUG: Verification - user_gender: ${prefs.getString('user_gender')}');
+      print('✅ DEBUG: Verification - ai_gender: ${prefs.getString('ai_gender')}');
 
       // Navigate to name selection screen
       if (mounted) {
