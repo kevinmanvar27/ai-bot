@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../providers/ai_assistant_provider.dart';
+import '../providers/shop_provider.dart';
 import '../widgets/avatar_3d_widget.dart';
 import 'shop_screen.dart';
 
@@ -90,6 +91,19 @@ class _AICallScreenState extends State<AICallScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Check for gift requests from AI
+    final aiProvider = Provider.of<AIAssistantProvider>(context, listen: false);
+    final shopProvider = Provider.of<ShopProvider>(context, listen: false);
+    
+    // Add gift request to shop if detected
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (aiProvider.lastGiftRequest != null) {
+        shopProvider.addGiftRequest(aiProvider.lastGiftRequest!);
+        aiProvider.clearLastGiftRequest();
+        print('🎁 Gift request added to shop');
+      }
+    });
+    
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(

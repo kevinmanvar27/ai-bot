@@ -24,6 +24,7 @@ class AIAssistantProvider with ChangeNotifier {
   bool _isTyping = false; // Typing indicator for AI response
   bool _continuousListening = false; // Flag for continuous conversation mode
   bool _isInterrupted = false; // Flag for user interruption during AI speaking
+  bool _isProcessing = false; // Flag to prevent multiple simultaneous AI calls
   
   // Shop integration
   int _messageCount = 0;
@@ -112,64 +113,111 @@ class AIAssistantProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Handle microphone button press
-  /// Uses Android native speech recognition
+  /// Handle microphone button press (Start voice call)
+  /// Mic stays ON throughout the call - like real phone call
   Future<void> handleMicPress() async {
     if (_isMicActive) return;
     
-    // Enable continuous listening mode when mic is pressed
+    // Enable continuous listening mode when call starts
     _continuousListening = true;
-
-    _isMicActive = true;
+    _isMicActive = true; // Mic visually ALWAYS ON during call
     notifyListeners();
-
-    try {
-      // Step 1: Listening (show listening state)
-      _currentState = AIState.listening;
-      _currentEmotion = AIEmotion.neutral;
-      notifyListeners();
-
-      print('🎤 Starting speech recognition...');
-      
-      // Request microphone permission
-      final hasPermission = await _voiceService.requestMicrophonePermission();
-      if (!hasPermission) {
-        await _voiceService.speak('Please grant microphone permission to use voice features.');
-        _currentState = AIState.idle;
-        _isMicActive = false;
-        notifyListeners();
-        return;
-      }
-
-      // Use Android's native speech recognition
-      String recognizedText = '';
+    
+    print('📞 Voice call started - Mic ALWAYS ON');
+    
+    // Start continuous listening loop
+    _startContinuousListeningLoop();
+  }
+  
+  /// Continuous listening loop - like real phone call
+  /// Mic listens ONLY when AI is not speaking (to avoid self-interruption)
+  Future<void> _startContinuousListeningLoop() async {
+    while (_continuousListening) {
       try {
-        final result = await platform.invokeMethod('startSpeechRecognition');
-        recognizedText = result?.toString() ?? '';
-        print('✅ Recognized text: "$recognizedText"');
-      } on PlatformException catch (e) {
-        print('❌ Speech recognition platform error: ${e.message}');
-        await _voiceService.speak('Sorry, there was an error with the microphone.');
-        _currentState = AIState.idle;
-        _isMicActive = false;
+        // CRITICAL FIX: Don't listen while AI is speaking or thinking
+        // This prevents AI from hearing its own voice and interrupting itself
+        if (_currentState == AIState.speaking || _currentState == AIState.thinking || _isProcessing) {
+          print('🔇 AI is busy - skipping mic activation to avoid self-interruption');
+          await Future.delayed(const Duration(milliseconds: 1000));
+          continue;
+        }
+        
+        // Step 1: Listening (only when AI is idle)
+        _currentState = AIState.listening;
+        _currentEmotion = AIEmotion.neutral;
         notifyListeners();
-        return;
+
+        print('🎤 Listening for user speech...');
+        
+        // Request microphone permission (first time only)
+        final hasPermission = await _voiceService.requestMicrophonePermission();
+        if (!hasPermission) {
+          await _voiceService.speak('Please grant microphone permission to use voice features.');
+          stopContinuousListening();
+          return;
+        }
+
+        // Use Android's native speech recognition
+        String recognizedText = '';
+        try {
+          final result = await platform.invokeMethod('startSpeechRecognition');
+          recognizedText = result?.toString() ?? '';
+          print('✅ Recognized text: "$recognizedText"');
+        } on PlatformException catch (e) {
+          print('❌ Speech recognition platform error: ${e.message}');
+          // Continue listening on error (don't break the loop)
+          await Future.delayed(const Duration(milliseconds: 2000));
+          continue;
+        } catch (e) {
+          print('❌ Speech recognition error: $e');
+          recognizedText = '';
+        }
+        
+        // If no speech detected, continue listening immediately
+        if (recognizedText.trim().isEmpty) {
+          print('⚠️ No speech detected, continuing to listen...');
+          await Future.delayed(const Duration(milliseconds: 2000));
+          continue;
+        }
+
+        print('✅ User said: $recognizedText');
+        
+        // Double-check AI is not speaking before processing
+        // (In case state changed during recognition)
+        if (_currentState == AIState.speaking || _isProcessing) {
+          print('⚠️ AI started speaking during recognition - discarding input to avoid self-interruption');
+          await Future.delayed(const Duration(milliseconds: 2000));
+          continue;
+        }
+        
+        // Process the speech in a separate task (non-blocking)
+        _processSpeech(recognizedText);
+        
+        // Continue listening immediately (don't wait for AI response)
+        await Future.delayed(const Duration(milliseconds: 2000));
+        
       } catch (e) {
-        print('❌ Speech recognition error: $e');
-        recognizedText = '';
+        print('❌ Error in continuous listening loop: $e');
+        await Future.delayed(const Duration(milliseconds: 500));
+        // Continue loop on error
       }
-      
-      if (recognizedText.trim().isEmpty) {
-        print('⚠️ No speech detected');
-        await _voiceService.speak('Sorry, I didn\'t hear anything. Please try again.');
-        _currentState = AIState.idle;
-        _isMicActive = false;
-        notifyListeners();
-        return;
-      }
-
-      print('✅ User said: $recognizedText');
-
+    }
+    
+    // Loop ended - call was ended
+    print('📞 Voice call ended');
+    _currentState = AIState.idle;
+    _currentEmotion = AIEmotion.neutral;
+    _isMicActive = false;
+    notifyListeners();
+  }
+  
+  /// Process user speech (separate from listening loop)
+  Future<void> _processSpeech(String recognizedText) async {
+    if (_isProcessing) return;
+    
+    _isProcessing = true;
+    
+    try {
       // Step 2: Processing (Thinking)
       _currentState = AIState.thinking;
       _currentEmotion = AIEmotion.thinking;
@@ -186,6 +234,9 @@ class AIAssistantProvider with ChangeNotifier {
       }
 
       print('✅ AI response: $aiResponseText');
+      
+      // Detect if AI is requesting a gift
+      _detectAndHandleGiftRequest(aiResponseText);
 
       // Step 3: Speaking
       _currentState = AIState.speaking;
@@ -203,60 +254,30 @@ class AIAssistantProvider with ChangeNotifier {
       
       if (!elevenLabsSuccess) {
         print('🔄 Falling back to Google TTS');
+        // Google TTS speak() now waits for completion internally
         await _voiceService.speak(aiResponseText);
-        
-        // Wait for Google TTS to complete (estimate based on text length)
-        final estimatedDuration = Duration(
-          milliseconds: (aiResponseText.length * 80), // ~80ms per character
-        );
-        await Future.delayed(estimatedDuration);
       }
       
       // Check if user interrupted during speaking
       if (_isInterrupted) {
         print('⚠️ Speech was interrupted by user');
-        return; // Exit early, don't restart mic (interrupt function will handle it)
+        _isInterrupted = false; // Reset flag
       }
       
-      // ElevenLabs already waits for completion internally
+      // Both ElevenLabs and Google TTS now wait for completion
       print('✅ Voice playback completed');
       
-      // Step 4: Return to Idle (but keep mic ready)
-      _currentState = AIState.idle;
-      _currentEmotion = AIEmotion.neutral;
-      _isMicActive = false;
-      notifyListeners();
-      
-      // Check if continuous mode is still ON before pausing
-      if (!_continuousListening) {
-        print('🛑 Continuous mode stopped, not restarting mic');
-        return;
-      }
-      
-      // Step 5: Natural pause before restarting mic (like real conversation)
-      print('⏸️ Natural pause before listening again...');
-      await Future.delayed(const Duration(milliseconds: 1000)); // 1 second pause
-      
-      // Check again after pause (user might have ended call during pause)
+      // Return to listening state
       if (_continuousListening) {
-        print('🔄 Auto-restarting mic for continuous conversation...');
-        handleMicPress();
-      } else {
-        print('🛑 Call ended during pause, not restarting mic');
+        _currentState = AIState.listening;
+        _currentEmotion = AIEmotion.neutral;
+        notifyListeners();
       }
-
-    } catch (e) {
-      print('❌ Error in voice call: $e');
-      await _voiceService.speak('Sorry, something went wrong. Please try again.');
       
-      // Don't restart mic on error
-      _continuousListening = false;
+    } catch (e) {
+      print('❌ Error processing speech: $e');
     } finally {
-      // Step 4: Return to Idle
-      _currentState = AIState.idle;
-      _currentEmotion = AIEmotion.neutral;
-      _isMicActive = false;
-      notifyListeners();
+      _isProcessing = false;
     }
   }
 
@@ -277,30 +298,25 @@ class AIAssistantProvider with ChangeNotifier {
   }
   
   /// Interrupt AI speaking (when user wants to speak during AI response)
+  /// Note: Auto-interrupt is now handled in the listening loop
   Future<void> interruptAndListen() async {
     if (_currentState != AIState.speaking) {
-      // Only interrupt if AI is speaking
       return;
     }
     
-    print('⚠️ User interrupting AI...');
+    print('⚠️ Manual interrupt triggered...');
     _isInterrupted = true;
     
     // Stop AI voice immediately
     _voiceService.stop();
     ElevenLabsService.stop();
     
-    // Reset state
-    _currentState = AIState.idle;
-    _isMicActive = false;
+    // Reset state to listening (loop will continue automatically)
+    _currentState = AIState.listening;
+    _currentEmotion = AIEmotion.neutral;
     notifyListeners();
     
-    // Small delay for audio to stop
-    await Future.delayed(const Duration(milliseconds: 200));
-    
-    // Start listening to user
-    print('🎤 Starting to listen after interruption...');
-    handleMicPress();
+    print('🎤 Interrupted - mic continues listening...');
   }
 
   /// Handle text message send
@@ -390,8 +406,8 @@ class AIAssistantProvider with ChangeNotifier {
     notifyListeners();
   }
   
-  /// Add AI's reaction message to chat
-  void addReactionMessage(String reaction) {
+  /// Add AI's reaction message to chat and speak it in voice call
+  Future<void> addReactionMessage(String reaction) async {
     _messages.add(MessageModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       text: reaction,
@@ -407,7 +423,166 @@ class AIAssistantProvider with ChangeNotifier {
     }
     
     notifyListeners();
+    
+    // If in voice call mode (continuous listening), speak the reaction
+    if (_continuousListening && !_isProcessing) {
+      print('🎁 Speaking gift reaction in voice call...');
+      
+      // CRITICAL: Set processing flag to prevent listening loop interference
+      _isProcessing = true;
+      
+      // Set speaking state
+      _currentState = AIState.speaking;
+      notifyListeners();
+      
+      // Remove emojis for voice
+      final cleanReaction = reaction.replaceAll(RegExp(r'[😍🥰💕😐😔🥺💖✨😊]'), '').trim();
+      
+      try {
+        // Speak the reaction
+        bool elevenLabsSuccess = false;
+        if (ElevenLabsService.isInitialized) {
+          elevenLabsSuccess = await ElevenLabsService.speak(cleanReaction);
+        }
+        
+        if (!elevenLabsSuccess) {
+          await _voiceService.speak(cleanReaction);
+        }
+        
+        print('✅ Gift reaction spoken');
+      } finally {
+        // Always release processing flag
+        _isProcessing = false;
+        
+        // Return to listening state
+        if (_continuousListening) {
+          _currentState = AIState.listening;
+          notifyListeners();
+        }
+      }
+    }
   }
+  
+  /// Detect if AI is requesting a gift from the response
+  void _detectAndHandleGiftRequest(String aiResponse) {
+    final lowerResponse = aiResponse.toLowerCase();
+    
+    // Gift request keywords
+    final requestKeywords = [
+      'want', 'need', 'buy', 'get me', 'gift', 'give me',
+      'would you', 'can you', 'please', 'i like', 'i love',
+      'chahiye', 'chaiye', 'de do', 'la do', 'kharid do', // Hindi
+      'joie', 'apo', 'lavo', 'khariduvu', // Gujarati
+    ];
+    
+    // Check if AI is requesting something
+    bool isRequest = requestKeywords.any((keyword) => lowerResponse.contains(keyword));
+    if (!isRequest) return;
+    
+    // Get all shop items
+    final allItems = DummyShopData.getAllItems();
+    
+    // Try to find matching item in the response
+    ShopItem? matchedItem;
+    String? matchedColor;
+    
+    for (var item in allItems) {
+      // Check if item name is mentioned
+      if (lowerResponse.contains(item.name.toLowerCase())) {
+        matchedItem = item;
+        
+        // Try to find color mention
+        for (var color in item.colors) {
+          if (lowerResponse.contains(color.toLowerCase())) {
+            matchedColor = color;
+            break;
+          }
+        }
+        break;
+      }
+      
+      // Check for category keywords
+      if (item.category == 'gifts') {
+        if ((lowerResponse.contains('flower') || lowerResponse.contains('phool')) && 
+            item.name.contains('Rose')) {
+          matchedItem = item;
+        } else if ((lowerResponse.contains('perfume') || lowerResponse.contains('scent')) && 
+                   item.name.contains('Perfume')) {
+          matchedItem = item;
+        } else if ((lowerResponse.contains('teddy') || lowerResponse.contains('bear')) && 
+                   item.name.contains('Teddy')) {
+          matchedItem = item;
+        }
+      } else if (item.category == 'clothing') {
+        if ((lowerResponse.contains('dress') || lowerResponse.contains('kapde')) && 
+            item.name.contains('Dress')) {
+          matchedItem = item;
+        } else if ((lowerResponse.contains('jacket') || lowerResponse.contains('coat')) && 
+                   item.name.contains('Jacket')) {
+          matchedItem = item;
+        } else if ((lowerResponse.contains('shoe') || lowerResponse.contains('jute')) && 
+                   item.name.contains('Sneakers')) {
+          matchedItem = item;
+        }
+      } else if (item.category == 'accessories') {
+        if ((lowerResponse.contains('bag') || lowerResponse.contains('purse')) && 
+            item.name.contains('Handbag')) {
+          matchedItem = item;
+        } else if ((lowerResponse.contains('ring') || lowerResponse.contains('anguthi')) && 
+                   item.name.contains('Ring')) {
+          matchedItem = item;
+        } else if ((lowerResponse.contains('watch') || lowerResponse.contains('ghadi')) && 
+                   item.name.contains('Watch')) {
+          matchedItem = item;
+        }
+      } else if (item.category == 'food') {
+        if ((lowerResponse.contains('cake') || lowerResponse.contains('pastry')) && 
+            item.name.contains('Cake')) {
+          matchedItem = item;
+        } else if ((lowerResponse.contains('coffee') || lowerResponse.contains('chai')) && 
+                   item.name.contains('Coffee')) {
+          matchedItem = item;
+        } else if ((lowerResponse.contains('ice cream') || lowerResponse.contains('icecream')) && 
+                   item.name.contains('Ice Cream')) {
+          matchedItem = item;
+        }
+      }
+      
+      if (matchedItem != null) {
+        // Try to find color in response
+        for (var color in matchedItem.colors) {
+          if (lowerResponse.contains(color.toLowerCase())) {
+            matchedColor = color;
+            break;
+          }
+        }
+        break;
+      }
+    }
+    
+    // If item matched, create gift request
+    if (matchedItem != null) {
+      print('🎁 Gift request detected: ${matchedItem.name} ${matchedColor ?? ""}');
+      
+      // Create gift request
+      final request = GiftRequest(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        requestedItem: matchedItem,
+        preferredColor: matchedColor,
+        requestMessage: aiResponse,
+        requestDate: DateTime.now(),
+      );
+      
+      // Store request for later retrieval
+      _lastGiftRequest = request;
+      print('🎁 Gift request created: ${matchedItem.name} in ${matchedColor ?? "any color"}');
+    }
+  }
+  
+  // Store last gift request
+  GiftRequest? _lastGiftRequest;
+  GiftRequest? get lastGiftRequest => _lastGiftRequest;
+  void clearLastGiftRequest() => _lastGiftRequest = null;
 
   /// Toggle camera
   void toggleCamera() {

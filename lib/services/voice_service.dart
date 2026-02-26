@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 class VoiceService {
   final FlutterTts _flutterTts = FlutterTts();
   String _currentLanguage = "en-US"; // Default language
+  bool _isSpeaking = false;
 
   /// Initialize the text-to-speech engine
   Future<void> initializeTTS() async {
@@ -28,6 +29,22 @@ class VoiceService {
         ],
         IosTextToSpeechAudioMode.spokenAudio,
       );
+      
+      // Setup completion handlers
+      _flutterTts.setStartHandler(() {
+        _isSpeaking = true;
+        print('🔊 Google TTS started speaking');
+      });
+      
+      _flutterTts.setCompletionHandler(() {
+        _isSpeaking = false;
+        print('✅ Google TTS completed speaking');
+      });
+      
+      _flutterTts.setErrorHandler((msg) {
+        _isSpeaking = false;
+        print('❌ Google TTS error: $msg');
+      });
       
       // Check available languages
       try {
@@ -182,9 +199,26 @@ class VoiceService {
       }
       
       // Speak the text
+      _isSpeaking = true;
       await _flutterTts.speak(cleanText);
       print('🔊 Speaking in $_currentLanguage: ${cleanText.substring(0, cleanText.length > 50 ? 50 : cleanText.length)}...');
+      
+      // Wait for completion (with timeout)
+      int waitCount = 0;
+      const maxWait = 300; // 30 seconds max (300 * 100ms)
+      while (_isSpeaking && waitCount < maxWait) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        waitCount++;
+      }
+      
+      if (waitCount >= maxWait) {
+        print('⚠️ Google TTS timeout - forcing completion');
+        _isSpeaking = false;
+      }
+      
+      print('✅ Google TTS speak() completed');
     } catch (e) {
+      _isSpeaking = false;
       print('❌ Error speaking: $e');
     }
   }
@@ -202,6 +236,7 @@ class VoiceService {
   Future<void> stopSpeaking() async {
     try {
       await _flutterTts.stop();
+      _isSpeaking = false;
       print('🔇 Stopped speaking');
     } catch (e) {
       print('❌ Error stopping speech: $e');

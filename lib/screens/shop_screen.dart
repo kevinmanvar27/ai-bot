@@ -623,6 +623,9 @@ class _ShopScreenState extends State<ShopScreen> with SingleTickerProviderStateM
     final aiProvider = Provider.of<AIAssistantProvider>(context, listen: false);
     final reaction = shopProvider.giftItemToAI(item);
     
+    // Add reaction to AI chat/conversation
+    aiProvider.addReactionMessage(reaction['message']);
+    
     // Show reaction dialog
     showDialog(
       context: context,

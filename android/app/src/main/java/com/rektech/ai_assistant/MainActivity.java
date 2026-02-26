@@ -82,10 +82,26 @@ public class MainActivity extends FlutterActivity {
             return;
         }
 
-        // Stop any existing recognition
+        // CRITICAL FIX: Don't start if already listening
         if (isListening && speechRecognizer != null) {
-            speechRecognizer.stopListening();
-            speechRecognizer.destroy();
+            System.out.println("⚠️ Already listening - skipping new recognition request");
+            if (pendingResult != null) {
+                pendingResult.success("");
+                pendingResult = null;
+            }
+            return;
+        }
+
+        // Stop any existing recognition before creating new one
+        if (speechRecognizer != null) {
+            try {
+                speechRecognizer.stopListening();
+                speechRecognizer.destroy();
+                // Give the service time to cleanup before creating new recognizer
+                Thread.sleep(500);
+            } catch (Exception e) {
+                System.out.println("⚠️ Error stopping previous recognizer: " + e.getMessage());
+            }
         }
 
         // Clear previous partial result
@@ -101,7 +117,7 @@ public class MainActivity extends FlutterActivity {
                 isListening = true;
                 System.out.println("🎤 Ready for speech - Start speaking now!");
                 
-                // Set timeout for 10 seconds
+                // Set timeout for 5 seconds (reduced from 10 for faster response)
                 timeoutRunnable = () -> {
                     if (isListening) {
                         System.out.println("⏱️ Timeout - stopping recognition");
@@ -116,7 +132,7 @@ public class MainActivity extends FlutterActivity {
                         }
                     }
                 };
-                timeoutHandler.postDelayed(timeoutRunnable, 10000);
+                timeoutHandler.postDelayed(timeoutRunnable, 5000);
             }
 
             @Override
